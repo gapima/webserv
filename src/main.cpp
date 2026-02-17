@@ -6,7 +6,7 @@
 /*   By: glima <glima@student.42sp.org.br>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/02/17 15:59:49 by glima             #+#    #+#             */
-/*   Updated: 2026/02/17 17:31:39 by glima            ###   ########.fr       */
+/*   Updated: 2026/02/17 18:17:29 by glima            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,7 +18,6 @@
 
 int main()
 {
-
     struct addrinfo hints;
     struct addrinfo *res = NULL;
     
@@ -28,7 +27,6 @@ int main()
     hints.ai_flags = AI_PASSIVE;
     
     int status = getaddrinfo("127.0.0.1", "8080", &hints, &res);
-
     if (status != 0 || res == NULL)
     {
         std::cerr << "getaddrinfo: " << gai_strerror(status) << std::endl;
@@ -53,10 +51,7 @@ int main()
         exit(1);
     }
     
-    
     //std::cout << "Valor do bind: " << bi << std::endl;
-
-    
     if(listen(server_fd, SOMAXCONN))
     {
         perror("listen");
@@ -64,7 +59,7 @@ int main()
         exit(1);
     }
     
-    while (1)
+    while (true)
     {
         int accept_fd = accept(server_fd, res->ai_addr, &res->ai_addrlen);
         char buffer[1024];
@@ -73,7 +68,6 @@ int main()
         std::cout << "Cliente Online: " << accept_fd << std::endl;
     }
     freeaddrinfo(res);
-    
 
     return 0;
 }
