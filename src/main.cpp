@@ -6,7 +6,7 @@
 /*   By: glima <glima@student.42sp.org.br>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/02/18 19:11:12 by glima             #+#    #+#             */
-/*   Updated: 2026/02/18 22:01:15 by glima            ###   ########.fr       */
+/*   Updated: 2026/02/18 22:10:30 by glima            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -99,6 +99,7 @@ int main()
         return 1;
     }
 
+    //implementando epoll
     int epoll_fd = epoll_create(1);
     if (epoll_fd == -1)
     {
@@ -173,7 +174,6 @@ int main()
 
         }
     }
-    
     
     return 0;
 }
