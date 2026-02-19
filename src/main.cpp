@@ -6,7 +6,7 @@
 /*   By: glima <glima@student.42sp.org.br>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/02/18 19:11:12 by glima             #+#    #+#             */
-/*   Updated: 2026/02/18 19:36:52 by glima            ###   ########.fr       */
+/*   Updated: 2026/02/18 22:01:15 by glima            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,12 +14,28 @@
 #include <map>
 #include <string>
 #include <cstring>
-
+#include <vector>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
+#include <algorithm>
+
+#define MAX_EVENTS 1024 
+
+
+
+struct Client {
+    int fd;
+
+    bool operator==(int value) const {
+        return fd == value;
+    }
+};
+
+
+
 
 static int setNonBlocking(int fd)
 {
@@ -28,7 +44,7 @@ static int setNonBlocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-static int createListenSocket(const char* port)
+static int createListenSocket(const char* port, const char* host)
 {
     addrinfo hints;
     addrinfo *res = NULL;
@@ -38,7 +54,7 @@ static int createListenSocket(const char* port)
     hints.ai_socktype = SOCK_STREAM; 
     hints.ai_flags = AI_PASSIVE;      
 
-    int st = getaddrinfo(NULL, port, &hints, &res);
+    int st = getaddrinfo(host, port, &hints, &res);
     if (st != 0 || !res)
     {
         std::cerr << "getaddrinfo: " << gai_strerror(st) << std::endl;
@@ -52,8 +68,8 @@ static int createListenSocket(const char* port)
         server_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (server_fd == -1) continue;
 
-        int opt = 1;
-        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        //int opt = 1;
+        //setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
         if (bind(server_fd, p->ai_addr, p->ai_addrlen) == 0)
             break;
@@ -73,63 +89,61 @@ static int createListenSocket(const char* port)
 
 int main()
 {
-    int server_fd = createListenSocket("8080");
+    
+    struct epoll_event ev, events[MAX_EVENTS]; 
+    std::vector<Client> clients;
+    int server_fd = createListenSocket("8080", "127.0.0.1");
     if (server_fd == -1)
     {
         perror("listen socket");
         return 1;
     }
 
-    int epfd = epoll_create(1);
-    if (epfd == -1)
+    int epoll_fd = epoll_create(1);
+    if (epoll_fd == -1)
     {
         perror("epoll_create");
         close(server_fd);
         return 1;
     }
-
-    epoll_event ev;
+    
     std::memset(&ev, 0, sizeof(ev));
-    ev.events = EPOLLIN;      
+    ev.events = EPOLLIN;
     ev.data.fd = server_fd;
 
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, server_fd, &ev) == -1)
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1)
     {
         perror("epoll_ctl ADD server_fd");
-        close(epfd);
+        close(epoll_fd);
         close(server_fd);
         return 1;
     }
 
-    std::map<int, std::string> inBuf;
-    std::map<int, std::string> outBuf;
-
-    epoll_event events[64];
-
-    std::cout << "Listening on 8080 (epoll)..." << std::endl;
-
+    std::cout << "Connection client sucess." << std::endl;
     while (true)
     {
-        int n = epoll_wait(epfd, events, 64, -1);
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, 10000);
         if (n == -1)
         {
             perror("epoll_wait");
             break;
         }
-
-        for (int i = 0; i < n; i++)
+        for(int i = 0; i < n; i++)
         {
-            int fd = events[i].data.fd;
-
-            if (fd == server_fd)
+            struct epoll_event event = events[i];
+            
+            std::vector<Client>::iterator it = std::find(clients.begin(), clients.end(), event.data.fd);
+            
+            if (it == clients.end())
             {
-                sockaddr_storage client_addr;
-                socklen_t client_len = sizeof(client_addr);
-
-                int client_fd = accept(server_fd, (sockaddr*)&client_addr, &client_len);
+                int client_fd = accept(event.data.fd, NULL, NULL);
                 if (client_fd == -1)
-                    continue; 
+                    continue;
+                
+                Client cliente;
 
+                cliente.fd = client_fd;
+                
                 if (setNonBlocking(client_fd) == -1)
                 {
                     close(client_fd);
@@ -138,52 +152,28 @@ int main()
 
                 epoll_event cev;
                 std::memset(&cev, 0, sizeof(cev));
-                cev.events = EPOLLIN;
+                cev.events = EPOLLIN | EPOLLET;
                 cev.data.fd = client_fd;
-
-                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &cev) == -1)
+                
+                
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &cev) == -1)
                 {
                     close(client_fd);
                     continue;
                 }
-
-                inBuf[client_fd] = "";
-                outBuf[client_fd] = "";
-
-                std::cout << "Client connected fd=" << client_fd << std::endl;
-            }
-            else
-            {
-                if (events[i].events & (EPOLLHUP | EPOLLERR))
+                
+                clients.push_back(cliente);
+                for (size_t i = 0; i < clients.size(); i++)
                 {
-                    close(fd);
-                    epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
-                    inBuf.erase(fd);
-                    outBuf.erase(fd);
-                    continue;
+                    std::cout << clients[i].fd << std::endl;
                 }
-
-                if (events[i].events & EPOLLIN)
-                {
-                    char buf[1024];
-                    int r = recv(fd, buf, sizeof(buf), 0);
-                    if (r <= 0)
-                    {
-                        close(fd);
-                        epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
-                        inBuf.erase(fd);
-                        outBuf.erase(fd);
-                        continue;
-                    }
-                    inBuf[fd].append(buf, r);
-
-                    std::cout << "fd=" << fd << " received " << r << " bytes" << std::endl;
-                }
+                            
+                continue;
             }
+
         }
     }
-
-    close(epfd);
-    close(server_fd);
+    
+    
     return 0;
 }
